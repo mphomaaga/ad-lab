@@ -127,7 +127,7 @@ Three GPOs configured to demonstrate domain-wide policy, OU-level targeting, and
 | Lockout duration | 30 minutes | Auto-unlocks; reduces helpdesk load |
 | Lockout counter reset | 30 minutes | Aligns with lockout duration |
 
-![Password Policy GPO](screenshots/05a-gpo-password-policy.png)
+![Password Policy GPO](screenshots/05-gpo-password-policy.png)
 
 ![Password Policy Settings](screenshots/06-password-policy-settings.png)
 
@@ -137,7 +137,7 @@ Three GPOs configured to demonstrate domain-wide policy, OU-level targeting, and
 - Demonstrates OU-scoped policy: only IT users receive this policy
 - Uses a network share (UNC path), which is the correct approach for GPO-deployed resources
 
-![IT Wallpaper GPO](screenshots/05b-gpo-it-wallpaper.png)
+![IT Wallpaper GPO](screenshots/05-gpo-it-wallpaper.png)
 
 **3. Finance Drive Mapping** — Linked to `Finance` OU only
 
@@ -145,7 +145,7 @@ Three GPOs configured to demonstrate domain-wide policy, OU-level targeting, and
 - Share permissions: `Finance-Staff` group has Read/Change; Everyone removed
 - Demonstrates: drive mapping via GPP, NTFS/share permission scoping, OU-level targeting
 
-![Finance Drive Mapping GPO](screenshots/05c-gpo-finance-drive.png)
+![Finance Drive Mapping GPO](screenshots/05-gpo-finance-drive.png)
 
 ### Verified Behavior
 
