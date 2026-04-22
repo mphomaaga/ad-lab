@@ -4,7 +4,7 @@ A fully configured Active Directory environment built on VirtualBox, simulating 
 
 ## Why This Exists
 
-This lab was built to demonstrate hands-on competency with Windows Server administration and Active Directory — not just theoretical knowledge, but a working environment with documented decisions, real troubleshooting, and automation. Every configuration choice is explained below.
+This lab was built to demonstrate hands-on competency with Windows Server administration and Active Directory. Not just theoretical knowledge, but a working environment with documented decisions, real troubleshooting, and automation. Every configuration choice is explained below.
 
 ## Architecture
 
