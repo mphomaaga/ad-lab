@@ -1,14 +1,12 @@
 # Active Directory Home Lab
 
-Windows Server 2022 domain controller + Windows 10 client running in VirtualBox. Full AD DS setup with DNS, DHCP, organizational units, users and groups, and Group Policy. All are configured manually, not scripted.
+A fully configured Active Directory environment built on VirtualBox, simulating a small enterprise network with centralized identity management, DNS, DHCP, Group Policy, OU-based access control, a departmental file server with NTFS-level permissions, and PowerShell automation for bulk user provisioning.
 
-## What This Is
+## Why This Exists
 
-I built this to get hands-on with Active Directory beyond what my coursework covers. The goal was to simulate a small company network where I control identity, DNS, DHCP, and policy from a single domain controller, then prove it all works from a domain-joined client.
+This lab was built to demonstrate hands-on competency with Windows Server administration and Active Directory — not just theoretical knowledge, but a working environment with documented decisions, real troubleshooting, and automation. Every configuration choice is explained below.
 
-Everything documented here is running in my lab right now. If something's listed, I configured it and can walk through how it works.
-
-## Lab Layout
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -22,6 +20,7 @@ Everything documented here is running in my lab right now. If something's listed
 │  │  • AD DS (DC)     │      │   Domain-joined   │     │
 │  │  • DNS Server     │      │   to mylab.local  │     │
 │  │  • DHCP Server    │      │                   │     │
+│  │  • File Server    │      │                   │     │
 │  │                   │      │                   │     │
 │  │  Internal IP:     │      │  Internal IP:     │     │
 │  │  192.168.10.1     │      │  192.168.10.10    │     │
@@ -34,6 +33,8 @@ Everything documented here is running in my lab right now. If something's listed
 └─────────────────────────────────────────────────────┘
 ```
 
+## Environment Details
+
 | Component | Details |
 |-----------|---------|
 | Hypervisor | Oracle VirtualBox |
@@ -44,146 +45,342 @@ Everything documented here is running in my lab right now. If something's listed
 | DC IP | `192.168.10.1` |
 | Client IP | `192.168.10.10` |
 | DHCP Range | `192.168.10.100 – 192.168.10.200` |
+| File Server Root | `\\DC01\CompanyShares` |
 
-## Network Setup
+---
 
-Each VM has two network adapters. The Internal Network adapter (`intnet`) carries all domain traffic — DNS queries, DHCP, authentication, GPO distribution. The NAT adapter just gives the VMs internet access for updates.
+## What's Configured
 
-DC01's Internal Network adapter has a static IP of `192.168.10.1` with DNS pointing to `127.0.0.1` (itself, since it's the DNS server). The client points to `192.168.10.1` for DNS — this is the single most important setting for domain join. If the client can't find the DC via DNS, nothing works.
+### Network Configuration
 
-![DC01 network adapters — static IP and DNS on the Internal Network interface](screenshots/01-network-adapters.png)
+Dual-adapter setup on both VMs: Internal Network for domain traffic, NAT for internet access. The Internal Network adapter on DC01 is configured with a static IP of `192.168.10.1` and DNS pointing to itself (`127.0.0.1`).
 
-## Active Directory
+![Network adapters on DC01 — Internal Network adapter with static IP and DNS configuration](screenshots/version1-ad-lab/01-network-adapters.png)
 
-DC01 is promoted as the first (and only) domain controller in a new forest called `mylab.local`. Functional level is Windows Server 2016. DNS was installed automatically during the promotion — the forward lookup zone for `mylab.local` is AD-integrated.
+### Active Directory Domain Services
 
-Both DC01 and CLIENT01 show up as Host (A) records in the DNS zone, which confirms the client registered itself with the domain's DNS after joining.
+- Promoted DC01 as the first domain controller in a new forest (`mylab.local`)
+- Forest and domain functional level: Windows Server 2016
+- Integrated DNS zone created automatically during promotion
 
-![DNS forward lookup zone — A records for both DC01 and CLIENT01](screenshots/08-dns-forward-lookup.png)
+### DNS
 
-## DHCP
+- Forward lookup zone: `mylab.local` (AD-integrated)
+- DC01 points to itself (`127.0.0.1`) as primary DNS
+- Client points to DC01 (`192.168.10.1`) for name resolution — required for domain join and ongoing authentication
+- Both DC01 and CLIENT01 have registered Host (A) records in the zone, confirming successful DNS integration
 
-DHCP is running on DC01 with a scope of `192.168.10.100–200`. The server is authorized in AD. The client actually uses a static IP (`192.168.10.10`) for lab consistency, but the scope is active — you can see CLIENT01 showing up in Address Leases.
+![DNS Forward Lookup Zone showing registered A records for DC01 and CLIENT01](screenshots/version1-ad-lab/08-dns-forward-lookup.png)
 
-In a real environment the client would pull an address from DHCP. I used static here so the lab is reproducible without worrying about lease changes.
+### DHCP
 
-![DHCP console — active scope with CLIENT01 lease](screenshots/07-dhcp-scope.png)
+- Scope: `192.168.10.100 – 192.168.10.200`
+- Subnet mask: `255.255.255.0`
+- Default gateway: `192.168.10.1`
+- DNS server: `192.168.10.1`
+- DHCP server authorized in Active Directory
+- Active address lease for CLIENT01 confirming scope functionality
 
-## OU Structure
+![DHCP scope showing CLIENT01 with an active lease](screenshots/version1-ad-lab/07-dhcp-scope.png)
 
-```
-mylab.local
-├── IT
-├── HR
-├── Finance
-├── Management
-├── Workstations        ← CLIENT01 lives here, not in the default Computers container
-├── Servers
-└── Service Accounts
-```
+### Domain Join
 
-I structured OUs by department so I can target Group Policy at specific teams. Workstations, Servers, and Service Accounts are separate OUs because you don't want computer objects and service accounts mixed in with user accounts — that's a Microsoft best practice thing, and it matters once you start applying computer-level vs. user-level policies.
+CLIENT01 is joined to `mylab.local`, verified in System Properties.
 
-![OU structure in AD Users and Computers](screenshots/02-ou-structure.png)
+![CLIENT01 System Properties — Full computer name CLIENT01.mylab.local, Domain mylab.local](screenshots/version1-ad-lab/09-domain-join-proof.png)
 
-## Users and Groups
+---
 
-| OU | Users | Security Group |
-|----|-------|----------------|
-| IT | John Doe (`jdoe`), Jane Smith (`jsmith`) | `IT-Staff` |
-| HR | Sarah Miller (`smiller`), Mike Johnson (`mjohnson`) | `HR-Staff` |
-| Finance | Lisa Brown (`lbrown`), Tom Wilson (`twilson`) | `Finance-Staff` |
-| Management | David Clark (`dclark`) | `Management-Staff` |
+## Organizational Structure
 
-Each department has a Global Security group. Every user is a member of their department's group. The groups are what I use for share permissions and GPO filtering.
+### Organizational Units
 
-![IT OU contents — users and security group](screenshots/03-users-in-ou.png)
+The domain is organized by department to enable scoped Group Policy application and delegated administration:
 
-![Jane Smith's group membership — Domain Users + IT-Staff](screenshots/04-group-membership.png)
+- **IT** — IT staff and security group
+- **HR** — HR staff and security group
+- **Finance** — Finance staff and security group
+- **Management** — Management staff and security group
+- **Servers** — future server computer accounts
+- **Workstations** — client computer accounts
+- **Service Accounts** — dedicated accounts for automation and services
+
+![AD Users and Computers showing the full OU structure under mylab.local](screenshots/version1-ad-lab/02-ou-structure.png)
+
+### Users and Security Groups
+
+Each department OU contains its users and a matching security group (`IT-Staff`, `HR-Staff`, `Finance-Staff`, `Management-Staff`). Group membership drives both NTFS permissions on the file server and scoped GPO application.
+
+![Department OU populated with user accounts and the departmental security group](screenshots/version1-ad-lab/03-users-in-ou.png)
+
+![Member Of tab showing a user's security group membership](screenshots/version1-ad-lab/04-group-membership.png)
+
+---
 
 ## Group Policy
 
-I set up three GPOs to show different levels of policy targeting:
+GPOs are linked at the level that matches their scope: domain-wide for universal policies, OU-level for department-specific behaviour.
 
-### Password Policy — linked to `mylab.local` (applies domain-wide)
+![Full GPO tree — domain-level and OU-scoped GPOs linked correctly](screenshots/v2after/v2after-09-gpo-tree.png)
 
-| Setting | Value | Reasoning |
-|---------|-------|-----------|
-| Minimum password length | 10 characters | Higher than the default 7; still usable |
-| Complexity requirements | Enabled | Forces mix of uppercase, lowercase, digits, special chars |
-| Maximum password age | 90 days | Standard rotation window |
-| Minimum password age | 1 day | Stops users from cycling through history immediately |
-| Password history | 5 passwords | Can't reuse recent passwords |
-| Account lockout threshold | 5 attempts | Blocks brute-force without punishing typos too hard |
-| Lockout duration | 30 minutes | Auto-unlock so helpdesk doesn't get flooded |
-| Lockout counter reset | 30 minutes | Matches lockout duration |
+### Domain-Level GPOs
 
-### IT Desktop Wallpaper — linked to the IT OU only
+**Password Policy** — enforced across all accounts.
 
-Pushes a wallpaper image from a network share (`\\DC01\Shared\Wallpapers\company-wallpaper.jpg`). Only users in the IT OU get this — log in as an HR or Finance user and you get the default Windows wallpaper. The point is demonstrating that GPO scoping to a specific OU actually works.
+| Setting | Value |
+|---------|-------|
+| Minimum password length | 10 characters |
+| Password complexity | Enabled |
+| Password history | 5 passwords remembered |
+| Maximum password age | 90 days |
+| Minimum password age | 1 day |
+| Account lockout threshold | 5 invalid attempts |
+| Account lockout duration | 30 minutes |
 
-### Finance Drive Mapping — linked to the Finance OU only
+![Password Policy GPO settings](screenshots/version1-ad-lab/06-password-policy-settings.png)
 
-Maps `\\DC01\FinanceData` as the `F:` drive using Group Policy Preferences. The share permissions are locked down to the `Finance-Staff` group with Read/Change access — Everyone is removed. Log in as a Finance user and the drive appears. Log in as anyone else and it doesn't.
+**Public Drive Mapping** — maps `P:` to `\\DC01\CompanyShares\Public` for every domain user, regardless of department.
 
-![Group Policy Management — GPOs linked to their respective OUs](screenshots/05-gpo-finance-drive.png)
+### OU-Scoped GPOs
 
-![Password Policy settings — password and account lockout values](screenshots/06-password-policy-settings.png)
+| GPO | Linked To | What It Does |
+|-----|-----------|--------------|
+| IT Desktop Wallpaper | IT OU | Applies a custom desktop wallpaper to IT users via User Configuration → Desktop settings |
+| IT Drive Mapping | IT OU | Maps `H:` to `\\DC01\CompanyShares\IT` |
+| HR Drive Mapping | HR OU | Maps `H:` to `\\DC01\CompanyShares\HR` |
+| Finance Drive Mapping (Legacy) | Finance OU | Maps `F:` to legacy `\\DC01\FinanceData` and `H:` to `\\DC01\CompanyShares\Finance` |
+| Management Drive Mapping | Management OU | Maps `H:` to `\\DC01\CompanyShares\Management` |
 
-## Proof It Works
+The `H:` drive letter is reused across all department GPOs but points to a different UNC path per OU — so every user sees a consistent "home department drive" regardless of which department they belong to.
 
-All of this was verified on CLIENT01 by logging in as different domain users and checking what policies applied.
+**Custom wallpaper applied via GPO to an IT-scoped user:**
 
-**Domain join:**
+![Custom wallpaper applied to CLIENT01 when logged in as an IT user](screenshots/version1-ad-lab/11-it-wallpaper.png)
 
-![CLIENT01 — device name and domain confirmation](screenshots/09-domain-join-proof.png)
+**Finance user's mapped drives (F: legacy and other department drives):**
 
-**Finance user sees the F: drive:**
+![Finance user on CLIENT01 with F: drive mapped from the legacy share](screenshots/version1-ad-lab/10-finance-drive-map.png)
 
-![File Explorer as a Finance user — F: drive mapped to \\DC01\FinanceData](screenshots/10-finance-drive-map.png)
+**Policy resolution verified via `gpresult /r`:**
 
-**IT user gets the wallpaper:**
+![gpresult /r output on CLIENT01 showing applied GPOs and security group membership](screenshots/version1-ad-lab/12-gpresult.png)
 
-![CLIENT01 desktop as an IT user — wallpaper pushed via GPO](screenshots/11-it-wallpaper.png)
+---
 
-**gpresult confirms which policies are hitting the client:**
+## File Server with NTFS Permissions
 
-This is the one that ties it all together. `gpresult /r` shows the user's OU path (`OU=IT,DC=mylab,DC=local`), which GPOs are applied (IT Desktop Wallpaper), which were filtered out, and what security groups the user belongs to. If a policy isn't applying, this is how you diagnose it.
+DC01 hosts `C:\CompanyShares`, shared over the network as `\\DC01\CompanyShares`. The folder contains one subfolder per department plus a `Public` folder accessible to everyone.
 
-![gpresult /r output — applied GPOs, OU path, group membership](screenshots/12-gpresult.png)
+![CompanyShares folder structure on DC01 — IT, HR, Finance, Management, Public](screenshots/fileserversetup/fileserver-01-folder-structure.png)
 
-## Design Decisions
+### Share-Level Permissions
 
-**Two adapters per VM** — Internal Network handles domain traffic, NAT handles internet. In production you'd use one network with proper routing and firewall rules. The dual-adapter thing is a lab shortcut, not an architecture choice I'd recommend.
+The root share is configured with broad read access at the share level. **Domain Users** have **Read** permission — deliberately permissive, because the real access control is enforced at the NTFS layer below.
 
-**Static IPs on both machines** — The DC needs a static IP because it's the DNS and DHCP server. The client could use DHCP, but static makes the lab reproducible.
+![CompanyShares share permissions — Domain Users Read](screenshots/fileserversetup/fileserver-02-share-permissions.png)
 
-**`.local` domain** — Standard for isolated labs. In production, Microsoft recommends a subdomain of a domain you actually own (like `ad.company.com`) to avoid DNS conflicts with mDNS.
+### NTFS Permissions (per department folder)
 
-## What I'd Add Next
+Inheritance is **disabled** on each department folder, and permissions are explicitly set:
 
-- File server with per-department NTFS permissions
-- A second DC for replication and redundancy
-- Group Policy for Windows Firewall rules
-- LAPS for rotating local admin passwords
-- Windows Server Backup for DC system state
-- AD Certificate Services for internal PKI
+| Principal | Permission | Rationale |
+|-----------|------------|-----------|
+| `SYSTEM` | Full control | Required for system-level operations |
+| `Domain Admins` | Full control | Administrative access |
+| `<Department>-Staff` | Modify | Members can read, write, and modify |
+| `Management-Staff` | Read & execute | Management can read all departments but not modify |
 
-## Reproducing This
+![IT folder Advanced Security Settings — inheritance disabled, IT-Staff Modify, Management-Staff Read, Domain Admins and SYSTEM Full Control](screenshots/fileserversetup/fileserver-03-ntfs-permissions.png)
 
-1. Install VirtualBox
-2. Grab the Windows Server 2022 and Windows 10 Enterprise evaluation ISOs from Microsoft
-3. Create two VMs — 2 CPUs, 2–4GB RAM, 30–40GB disk each
-4. Set up dual adapters: Adapter 1 = Internal Network (`intnet`), Adapter 2 = NAT
-5. Install both OSes + VirtualBox Guest Additions
-6. Follow the steps in this README
+This two-layer design (permissive share, restrictive NTFS) follows the Microsoft-recommended model. Share permissions set an upper ceiling; NTFS enforces real access. It also makes permission auditing simpler — admins only need to reason about one layer.
 
-## Tools
+### Access Control Verification
+
+Logging in as `aturner` (IT-Staff member) on CLIENT01:
+
+- **H: (IT Department)** maps and opens successfully
+- **P: (Public)** maps and opens successfully
+- Navigating to `\\DC01\CompanyShares\Finance` returns **Access Denied** — NTFS is enforcing the departmental boundary
+
+![aturner's This PC showing H: (IT Department) and P: (Public) mapped](screenshots/v2after/v2after-07-drive-maps.png)
+
+![Inside the H: drive — proves the mapping is functional, not cosmetic](screenshots/v2after/v2after-07b-h-drive-contents.png)
+
+![aturner denied access to the Finance folder — NTFS boundary enforced](screenshots/v2after/v2after-08-access-denied.png)
+
+---
+
+## PowerShell Automation — Bulk User Provisioning
+
+Rather than creating users one at a time through the GUI, the `bulk-create-users.ps1` script reads a CSV file and provisions users into the correct OUs and security groups automatically.
+
+### Input
+
+`new-users.csv` — 10 users across 4 departments:
+
+![new-users.csv open in Notepad showing headers and 10 user rows](screenshots/v2before/v2before-01-csv-file.png)
+
+Both script and CSV live in `C:\Scripts` on DC01:
+
+![C:\Scripts folder containing bulk-create-users.ps1 and new-users.csv](screenshots/v2before/v2before-02-scripts-folder.png)
+
+### Script Behaviour
+
+- Reads the CSV row by row
+- Creates each user in the OU matching their `Department` column
+- Adds each user to the matching `<Department>-Staff` security group
+- Tags each created account with `Description = "Created by bulk-create-users.ps1"` (enables safe cleanup without touching manual accounts)
+- Writes a timestamped entry for every action to `C:\Scripts\user-creation-log.txt`
+- **Idempotent** — re-running skips accounts that already exist rather than failing or duplicating
+
+### Before and After
+
+**Before** — only the original manually created users exist in the OUs:
+
+![AD Users and Computers before the script ran — only manual users visible](screenshots/v2before/v2before-03-ad-before-state.png)
+
+**First run** — 10 accounts created, each placed in the correct OU and group:
+
+![PowerShell output — 10 green CREATED lines with DN paths and group assignments, summary Created 10, Skipped 0, Failed 0](screenshots/v2after/v2after-01-script-created.png)
+
+**After** — the IT OU now contains both the original users and the script-created ones (clearly tagged in the Description field):
+
+![AD Users and Computers after — script-created users alongside originals, tagged with "Created by bulk-create-users.ps1"](screenshots/v2after/v2after-03-ad-after-state.png)
+
+**Idempotency proof** — a second immediate run detects the existing accounts and skips them:
+
+![PowerShell output — 10 yellow SKIPPED lines, summary Created 0, Skipped 10, Failed 0](screenshots/v2after/v2after-02-script-skipped.png)
+
+### Auditability
+
+Every run is appended to a log file with timestamps, outcomes, and per-user results — a real audit trail, not just console output:
+
+![user-creation-log.txt showing three timestamped runs: a failed run, a successful run, and an idempotent re-run](screenshots/v2after/v2after-06-creation-log.png)
+
+### User Verification
+
+Script-created user properties and group membership:
+
+![Priya Naidoo Properties — General tab with first name, last name, and "Created by bulk-create-users.ps1" description](screenshots/v2after/v2after-04-user-properties.png)
+
+![Priya Naidoo's Member Of tab showing IT-Staff — script assigned the correct department group](screenshots/v2after/v2after-05-user-groups.png)
+
+---
+
+## Troubleshooting: The Orphaned SID Incident
+
+Not everything went smoothly, and that's the point of this section. During setup, a problem surfaced that took real debugging to resolve — and that story is more valuable than any perfect screenshot.
+
+### Symptom
+
+After logging into CLIENT01 as `aturner` (a newly script-created IT user), the `P:` (Public) drive mapped correctly, but the `H:` (IT Department) drive did **not** appear. Manually navigating to `\\DC01\CompanyShares\IT` returned **"Windows cannot access... You do not have permission to access"** — despite `aturner` being a confirmed member of `IT-Staff`.
+
+### Diagnosis Steps
+
+1. Ran `gpresult /r` on CLIENT01 — confirmed the `IT Drive Mapping` GPO was applied and `IT-Staff` was in the user's security groups. So Group Policy was reaching the user correctly.
+2. Verified from CLIENT01 that the `CompanyShares` root share was still reachable. It was.
+3. Pulled the NTFS ACL on the IT folder from DC01:
+
+    ```powershell
+    (Get-Acl C:\CompanyShares\IT).Access | Select-Object IdentityReference, FileSystemRights, AccessControlType | Format-Table -AutoSize
+    ```
+
+    Found this:
+
+    ![ACL before the fix — IT-Staff's entry appears as a raw SID (S-1-5-21-...), not as MYLAB\IT-Staff](screenshots/v2after/v2after-10b-broken-acl.png)
+
+### Root Cause
+
+During initial setup, the `IT-Staff` security group was created through the AD Users and Computers GUI. A non-printable character in the name caused a subtle issue that only surfaced later when PowerShell couldn't resolve the group. The fix at the time was to delete the broken group and recreate it in PowerShell.
+
+That fix worked for AD — but every Windows security identifier is unique. When `IT-Staff` was recreated, the new group got a brand new SID. The NTFS ACL on `C:\CompanyShares\IT` was still pointing at the **old** SID from the deleted group. Since no user in the new `IT-Staff` group matches the old SID, access was denied — even though everything appeared configured correctly at the AD layer.
+
+**Key insight: NTFS ACLs store SIDs, not group names.** Deleting and recreating a group that's already referenced in a filesystem ACL leaves an orphaned SID reference that will silently deny access.
+
+### Fix
+
+Purged the orphaned SID from the ACL and added a fresh entry for the new `IT-Staff` group:
+
+```powershell
+$acl = Get-Acl C:\CompanyShares\IT
+$orphanedSid = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-21-2758830125-4231238673-1060755913-1107")
+$acl.PurgeAccessRules($orphanedSid)
+$newRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    "MYLAB\IT-Staff", "Modify", "ContainerInherit,ObjectInherit", "None", "Allow"
+)
+$acl.SetAccessRule($newRule)
+Set-Acl -Path C:\CompanyShares\IT -AclObject $acl
+```
+
+Verified the ACL post-fix:
+
+![ACL after the fix — MYLAB\IT-Staff now appears with Modify rights, orphaned SID gone](screenshots/v2after/v2after-10-fixed-acl.png)
+
+After a fresh logon on CLIENT01, the `H:` drive appeared immediately.
+
+### Lessons
+
+- **Check every layer when something "looks right" but doesn't work.** GPO, share, NTFS, and group membership are four independent layers — any one of them can silently break.
+- **Deleting and recreating AD groups has cascading consequences.** Any downstream object that references the old SID (NTFS ACLs, share permissions, GPO security filtering, application access lists) will break silently.
+- **`Get-Acl` showing a raw SID instead of a resolved name is always a red flag.** It means the principal was deleted, was never valid, or belongs to a different domain.
+
+---
+
+## Repository Structure
+
+```
+ad-lab/
+├── README.md                          ← you are here
+├── scripts/
+│   ├── bulk-create-users.ps1          ← bulk user provisioning
+│   └── new-users.csv                  ← sample input for the script
+├── docs/
+│   ├── setup-guide.md                 ← step-by-step reproduction
+│   └── lessons.md                     ← troubleshooting write-ups
+└── screenshots/
+    ├── version1-ad-lab/               ← base lab configuration (01–12)
+    ├── v2before/                      ← pre-automation state (before bulk script ran)
+    ├── v2after/                       ← post-automation + file server state
+    └── fileserversetup/               ← NTFS and share permission setup
+```
+
+---
+
+## Reproducing This Lab
+
+1. Install VirtualBox on your host machine.
+2. Download Windows Server 2022 and Windows 10 Enterprise evaluation ISOs from the Microsoft Evaluation Center.
+3. Create two VMs: 2 vCPU / 2–4 GB RAM / 30–40 GB disk each.
+4. Configure dual network adapters on both: Adapter 1 = Internal Network (`intnet`), Adapter 2 = NAT.
+5. Install both operating systems and VirtualBox Guest Additions.
+6. Follow the sequence documented in `docs/setup-guide.md`:
+    - Configure DC01's static IP, promote to DC, install DNS/DHCP
+    - Create OU structure, security groups, and manual baseline users
+    - Build the `CompanyShares` file server and configure NTFS permissions
+    - Create GPOs (password policy, drive mappings, wallpaper)
+    - Join CLIENT01 to the domain
+    - Run `scripts/bulk-create-users.ps1` on DC01 to provision the remaining users
+
+---
+
+## What I Would Add Next
+
+- **Second domain controller** for replication and redundancy
+- **Windows Server Backup** scheduled system state backups
+- **Windows Firewall rules via GPO** — centralised firewall configuration
+- **LAPS (Local Administrator Password Solution)** — automated local admin rotation
+- **Active Directory Certificate Services** — internal PKI for LDAPS and cert-based auth
+- **Fine-grained password policies** for privileged accounts
+- **Event forwarding** to a dedicated collector for centralised auditing
+
+---
+
+## Tools Used
 
 - Oracle VirtualBox
 - Windows Server 2022 (Evaluation)
 - Windows 10 Enterprise (Evaluation)
 - Active Directory Users and Computers
 - Group Policy Management Console
-- DHCP Management Console
-- DNS Manager
+- DHCP and DNS consoles
+- PowerShell 5.1 (with ActiveDirectory module)
