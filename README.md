@@ -334,9 +334,6 @@ ad-lab/
 ├── scripts/
 │   ├── bulk-create-users.ps1          ← bulk user provisioning
 │   └── new-users.csv                  ← sample input for the script
-├── docs/
-│   ├── setup-guide.md                 ← step-by-step reproduction
-│   └── lessons.md                     ← troubleshooting write-ups
 └── screenshots/
     ├── version1-ad-lab/               ← base lab configuration (01–12)
     ├── v2before/                      ← pre-automation state (before bulk script ran)
@@ -353,7 +350,7 @@ ad-lab/
 3. Create two VMs: 2 vCPU / 2–4 GB RAM / 30–40 GB disk each.
 4. Configure dual network adapters on both: Adapter 1 = Internal Network (`intnet`), Adapter 2 = NAT.
 5. Install both operating systems and VirtualBox Guest Additions.
-6. Follow the sequence documented in `docs/setup-guide.md`:
+6. Follow the sequence below:
     - Configure DC01's static IP, promote to DC, install DNS/DHCP
     - Create OU structure, security groups, and manual baseline users
     - Build the `CompanyShares` file server and configure NTFS permissions
